@@ -1,11 +1,18 @@
 #include <sys/select.h>
+#include <functional>
 #include <chrono>
 
 #include "daemon.h"
 
-using std::chrono;
+Daemon::Daemon(unsigned long ip, unsigned short port)
+	:	serverSocket(ip, port)
+{
+	serverSocket.Bind();
+	serverSocket.Listen(20);
+}
 
-Daemon::Daemon()
+Daemon::Daemon(Socket::Address &address)
+	:	serverSocket(address)
 {
 }
 
@@ -13,20 +20,35 @@ Daemon::~Daemon()
 {
 }
 
-void Daemon::peerDiscoverThread()
+void Daemon::startThreads()
+{
+	std::thread discover(std::bind(&Daemon::peerDiscoveryThread, this));
+	std::thread sockets(std::bind(&Daemon::socketHandlerThread, this));
+
+	discover.join();
+	sockets.join();
+}
+
+void Daemon::peerDiscoveryThread()
 {
 	while (true)
 	{
+		std::this_thread::sleep_for(std::chrono::seconds(1));
+
+		std::lock_guard<std::mutex> guard(peer_lock);
 		// for now just poll stdin for port numbers
 		//
 		// also poll for messages ig
-		std::cout << "\tNew message (0)\n\tNew peer (1)";
+		std::cout << "\tNew message (0)\n\tAdd peer (1)\n\tPoll sockets (2)\n";
 
 		int opt;
 
 		std::cin >> opt;
 
-		if (opt == 0)
+		if (opt == 2)
+		{
+			continue;
+		} else if (opt == 0)
 		{
 			std::cout << "Port number: ";
 
@@ -36,14 +58,21 @@ void Daemon::peerDiscoverThread()
 
 			bool found = false;
 
-			std::unique_ptr peerTo;
 			for (auto &peer : peers)
 			{
-				if (peer.connection.getPort() == port)
+				if (peer->connection.getPort() == port)
 				{
 					found = true;
-					peerTo = peer;
-					break;
+
+					std::cout << "Message for peer: ";
+
+					std::string message;
+
+					std::cin >> message;
+
+					peer->sendStream += message;
+
+					// break;
 				}
 			}
 
@@ -53,14 +82,6 @@ void Daemon::peerDiscoverThread()
 				continue;
 			}
 
-			std::cout << "Message for peer: ";
-
-			std::string message;
-
-			std::cin >> message;
-
-			peerTo.sendStream += message;
-
 		} else if(opt == 1)
 		{
 			std::cout << "Port number: ";
@@ -69,8 +90,11 @@ void Daemon::peerDiscoverThread()
 			std::cin >> port;
 			try
 			{
-				auto nPeer = std::make_unique<Node>({INADDR_ANY, port});
-				peers.push_back(nPeer);
+				Socket connection(INADDR_ANY, port);
+				auto nPeer = std::make_unique<Node>(connection);
+				nPeer->connection.Connect();
+
+				peers.push_back(std::move(nPeer));
 
 				std::cout << "Successfully connected to peer on port: " << port << std::endl;
 			} catch (std::exception &e)
@@ -79,7 +103,6 @@ void Daemon::peerDiscoverThread()
 				continue;
 			}
 		}
-
 	}
 }
 
@@ -91,13 +114,22 @@ void Daemon::socketHandlerThread()
 {
 	while (true)
 	{
-		struct fd_set peerRecvFS;
-		struct fd_set peerSendFS;
+		std::this_thread::sleep_for(std::chrono::seconds(1));
+
+		std::lock_guard<std::mutex> guard(peer_lock);
+
+		std::cout << "Handling sockets\n";
+		fd_set peerRecvFS;
+		fd_set peerSendFS;
 
 		int maxFd = 0;
 
 		FD_ZERO(&peerRecvFS);
 		FD_ZERO(&peerSendFS);
+
+		FD_SET(serverSocket.fileHandle, &peerRecvFS);
+
+		maxFd = std::max(maxFd, serverSocket.fileHandle);
 
 		struct timeval timeout;
 
@@ -109,33 +141,41 @@ void Daemon::socketHandlerThread()
 		// add peers to fd sets
 		for (auto &peer : peers)
 		{
-			FD_SET(peer.getFd(), &peerRecvFS);
+			FD_SET(peer->getFd(), &peerRecvFS);
 
-			maxFd = std::max(maxFd, peer.getFd());
+			maxFd = std::max(maxFd, peer->getFd());
 
-			if (! peer.sendStream.empty())
-				FD_SET(peer.getFd(), &peerSendFS, NULL);
+			if (! peer->sendStream.empty())
+				FD_SET(peer->getFd(), &peerSendFS);
 		}
 
 		// blocks until one or more sockets are ready for i/o
-		int status = select(maxFd, &peerRecvFS, &peerSendFS, NULL, timeout);
+		int status = select(maxFd, &peerRecvFS, &peerSendFS, NULL, &timeout);
 
 
 		// read / write to ready peer sockets
 		for (auto &peer : peers)
 		{
-			if (FD_ISSET(peer.getFd(), &peerRecvFS))
+			if (FD_ISSET(peer->getFd(), &peerRecvFS))
 			{
-				std::cout << "Peer on port " << peer.connection.getPort() << " says " << peer.connection.Recv();
+				std::cout << "Peer on port " << peer->connection.getPort() << " says " << peer->connection.Recv();
 			}
 
-			if (FD_ISSET(peer.getFd(), &peerSendFS))
+			if (FD_ISSET(peer->getFd(), &peerSendFS))
 			{
-				peer.connection.Send(peer.sendStream);
+				peer->connection.Send(peer->sendStream);
 			}
 		}
 
-		std::this_thread::sleep_for(chrono::seconds(10));
+		// accept new peer connections
+		if (FD_ISSET(serverSocket.fileHandle, &peerRecvFS))
+		{
+			std::cout << "Received connection from peer\n";
+			auto nConnection = serverSocket.Accept();
+			auto nPeer = std::make_unique<Node>(*nConnection);
+
+			peers.push_back(std::move(nPeer));
+		}
 	}
 }
 
@@ -147,7 +187,10 @@ void Daemon::socketHandlerThread()
  *	user)
  *
  */
+
+/*
 void Daemon::messageHandlerThread()
 {
 
 }
+*/

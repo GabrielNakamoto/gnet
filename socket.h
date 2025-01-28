@@ -43,13 +43,10 @@ public:
 			};
 	};
 
-private:
+public:
 
 	Address address;
-
 	int fileHandle = -1;
-
-public:
 
 	// acquire socket resource
 	Socket(Address &address);
@@ -58,12 +55,6 @@ public:
 
 	// release socket resource
 	~Socket();
-
-	Socket(Socket &&socket) = default;
-	Socket& operator=(Socket &&socket) = default;
-
-	Socket(Socket &socket) = delete;
-	Socket& operator=(Socket &socket) = delete;
 
 	// sys call wrappers
 	void Bind();

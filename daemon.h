@@ -3,6 +3,8 @@
 
 #include <memory>
 #include <thread>
+#include <mutex>
+#include <vector>
 
 #include "socket.h"
 #include "node.h"
@@ -18,12 +20,16 @@ private:
 
 public:
 
-	Daemon();
+	Daemon(unsigned long ip, unsigned short port);
+	Daemon(Socket::Address &address);
+
 	~Daemon();
+
+	void startThreads();
 
 	void peerDiscoveryThread();
 	void socketHandlerThread();
-	void messageHandlerThread();
+	// void messageHandlerThread();
 
 };
 

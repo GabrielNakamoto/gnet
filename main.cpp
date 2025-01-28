@@ -2,6 +2,7 @@
 #include <cstring>
 
 // #include "node.h"
+#include "daemon.h"
 #include "socket.h"
 
 /*
@@ -76,17 +77,19 @@ void client(int port)
 
 int main(int argc, char **argv)
 {
-	if (argc == 1)
+	if (argc == 2)
 	{
-		server();
-	} else if (argc == 2)
-	{
-		client(strtol(argv[1], NULL, 10));
+		unsigned short port = strtol(argv[1], NULL, 10);
+
+		Daemon daemon(INADDR_ANY, port);
+
+		daemon.startThreads();
 	} else
 	{
-		std::cout << "Usage: " << argv[0] << " <optional port number>\n";
+		std::cout << "Usage: " << argv[0] << " <port>\n";
 		return 0;
 	}
 
 	return 0;
 }
+

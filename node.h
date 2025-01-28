@@ -1,8 +1,9 @@
 #ifndef NODE_H
 #define NODE_H
 
+#include <iostream>
+
 #include "socket.h"
-#include "daemon.h"
 
 /*
  *	Requirements:
@@ -27,7 +28,7 @@ private:
 
 public:
 
-	Node(Socket::Address &address);
+	Node(Socket &socket);
 
 	int getFd();
 };

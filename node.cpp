@@ -1,8 +1,9 @@
 #include "node.h"
 
-Node::Node(Address &address)
-	:	connection(address)
+Node::Node(Socket &socket)
+	:	connection(socket)
 {
+
 }
 
 int Node::getFd()
