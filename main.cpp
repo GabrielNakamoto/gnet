@@ -1,12 +1,7 @@
 #include <iostream>
-
-#include <unistd.h>
-#include <sys/socket.h>
-#include <arpa/inet.h>
 #include <cstring>
-#include <netdb.h>
-#include <netinet/in.h>
 
+// #include "node.h"
 #include "socket.h"
 
 /*
@@ -28,9 +23,12 @@
  * 	the server socket?
  */
 
-void server2()
+
+void server()
 {
-	Socket handlerSocket(0);
+	Socket::Address serverAddress(INADDR_ANY, -1);
+
+	Socket handlerSocket(serverAddress);
 
 	handlerSocket.Bind();
 
@@ -49,41 +47,41 @@ void server2()
 	}
 }
 
-void client2(int port)
+void client(int port)
 {
-	Socket connectionSocket(0, port);
+	try
+	{
+		Socket::Address serverAddress(INADDR_ANY, port);
 
-	connectionSocket.Connect();
+		Socket connectionSocket(serverAddress);
 
-	std::cout << "Connected to server\n";
+		connectionSocket.Connect();
 
-	std::cout << "Message: ";
+		std::cout << "Connected to server\n";
 
-	std::string message;
+		std::cout << "Message: ";
 
-	std::cin >> message;
+		std::string message;
 
-	connectionSocket.Send(message);
+		std::cin >> message;
+
+		connectionSocket.Send(message);
+
+	} catch (const std::exception &e)
+	{
+		std::cout << e.what() << std::endl;
+		return;
+	}
 }
-
-/*
-	// gets local address
-	char addrstr[NI_MAXHOST + NI_MAXSERV + 1];
-	snprintf(addrstr, sizeof(addrstr), "127.0.0.1:%d", port);
-
-	// convert the text version of the address to binary
-	// and store it in the addr struct
-	inet_pton(AF_INET, addrstr, &serv_addr.sin_addr);
-*/
 
 int main(int argc, char **argv)
 {
 	if (argc == 1)
 	{
-		server2();
+		server();
 	} else if (argc == 2)
 	{
-		client2(strtol(argv[1], NULL, 10));
+		client(strtol(argv[1], NULL, 10));
 	} else
 	{
 		std::cout << "Usage: " << argv[0] << " <optional port number>\n";
