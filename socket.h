@@ -3,34 +3,66 @@
 
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <arpa/inet.h>
 
 #include <memory>
 
+
 // TODO: exceptions / error handling
+// make protocol and service templates?
 class Socket
 {
+public:
+	struct Address
+	{
+		private:
+
+			unsigned int ip;
+			unsigned short port;
+
+		public:
+
+			Address(unsigned int ip, unsigned short port)
+				:	ip(ip)
+					,	port(port)
+		{
+		};
+
+			Address(struct sockaddr_in addr)
+			{
+				port = ntohs(addr.sin_port);
+				ip = ntohl(addr.sin_addr.s_addr);
+			}
+
+			struct sockaddr_in getSockAddr() const
+			{
+				struct sockaddr_in addr;
+				addr.sin_family = AF_INET;
+				addr.sin_port = htons(port);
+				addr.sin_addr.s_addr = htonl(ip);
+
+				return addr;
+			};
+	};
+
 private:
 
-		struct sockaddr_in fullAddr;
-
-		int fileHandle = -1;
-
-		int port;
-		int domain;
-		int service;
-		int protocol;
+	Address address;
+	int fileHandle = -1;
 
 public:
 
-	// transportation protocol
-	enum class TP
-	{
-	};
-
 	// creates new socket and populates address
 	// domain??
-	Socket(int protocol, int port = -1, int domain = AF_INET, int service = SOCK_STREAM, unsigned long addr = INADDR_ANY);
-	Socket(const int fileHandle, struct sockaddr_in addr);
+	Socket(Address &address);
+	Socket(unsigned int ip, unsigned short port);
+	Socket(const int fileHandle, struct sockaddr_in address);
+
+	Socket(Socket &&socket) = default;
+	Socket& operator=(Socket &&socket) = default;
+
+	Socket(Socket &socket) = delete;
+	Socket& operator=(Socket &socket) = delete;
 
 	~Socket();
 
@@ -45,10 +77,6 @@ public:
 	std::string Recv(size_t bufferSize = 1024);
 
 	int getPort();
-
-private:
-
-	sockaddr *getSockaddr();
 };
 
 #endif

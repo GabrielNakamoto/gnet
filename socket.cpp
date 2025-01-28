@@ -1,32 +1,36 @@
 #include <cstring>
-#include <arpa/inet.h>
 #include <string>
 #include <unistd.h>
+#include <stdexcept>
 
 #include "socket.h"
 
 // TODO: error handling
 
-Socket::Socket(int protocol, int port, int domain, int service, unsigned long addr)
-	:	domain(domain)
-	,	service(service)
-	,	protocol(protocol)
+Socket::Socket(Address &address)
+	:	address(address)
 {
-	fileHandle = socket(domain, service, protocol);
+	fileHandle = socket(AF_INET, SOCK_STREAM, 0);
 
-	fullAddr.sin_family = domain;
-
-	// host to network byte order conversions
-	if (port != -1)
+	if (fileHandle == -1)
 	{
-		fullAddr.sin_port = htons(port);
+		throw(std::runtime_error("Failed to acquire socket"));
 	}
+}
 
-	fullAddr.sin_addr.s_addr = htonl(addr);
+Socket::Socket(unsigned int ip, unsigned short port)
+	:	address(ip, port)
+{
+	fileHandle = socket(AF_INET, SOCK_STREAM, 0);
+
+	if (fileHandle == -1)
+	{
+		throw(std::runtime_error("Failed to acquire socket"));
+	}
 }
 
 Socket::Socket(const int fileHandle, struct sockaddr_in addr)
-	:	fullAddr(addr)
+	:	address(address)
 	,	fileHandle(fileHandle)
 {
 }
@@ -41,17 +45,34 @@ Socket::~Socket()
 
 void Socket::Bind()
 {
-	bind(fileHandle, getSockaddr(), sizeof(fullAddr));
+	struct sockaddr_in sockaddr = address.getSockAddr();
+	int res = bind(fileHandle, reinterpret_cast<struct sockaddr*>(&sockaddr), sizeof(sockaddr));
+
+	if (res == -1)
+	{
+		throw(std::runtime_error("Failed to bind to socket"));
+	}
 }
 
 void Socket::Connect()
 {
-	connect(fileHandle, getSockaddr(), sizeof(fullAddr));
+	struct sockaddr_in sockaddr = address.getSockAddr();
+
+	int res = connect(fileHandle, reinterpret_cast<struct sockaddr*>(&sockaddr), sizeof(sockaddr));
+
+	if (res == -1)
+	{
+		throw(std::runtime_error("Failed to connect to socket"));
+	}
 }
 
 void Socket::Listen(int backlog)
 {
-	listen(fileHandle, backlog);
+	int res = listen(fileHandle, backlog);
+	if (res == -1)
+	{
+		throw(std::runtime_error("Socket failed to listen for connections"));
+	}
 }
 
 std::unique_ptr<Socket> Socket::Accept()
@@ -61,36 +82,49 @@ std::unique_ptr<Socket> Socket::Accept()
 
 	const int connectionFileHandle = accept(fileHandle, reinterpret_cast<struct sockaddr *>(&connectionAddr), &addrLen);
 
+	if (connectionFileHandle == -1)
+	{
+		throw(std::runtime_error("Failed to accept socket connection"));
+	}
+
 	return std::make_unique<Socket>(connectionFileHandle, *reinterpret_cast<sockaddr_in *>(&connectionAddr));
 }
 
+// make send and recv return booleans or something?
 void Socket::Send(std::string &data, size_t bufferSize)
 {
 	// just get size of data?
 	char buf[bufferSize];
 	strcpy(buf, data.c_str());
 
-	send(fileHandle, buf, sizeof(buf), 0);
+	int res = send(fileHandle, buf, sizeof(buf), 0);
+
+	if (res == -1)
+	{
+		throw(std::runtime_error("Error sending data to socket"));
+	}
 }
 
 std::string Socket::Recv(size_t bufferSize)
 {
 	char buf[bufferSize];
 
-	recv(fileHandle, buf, sizeof(buf), 0);
+	int res = recv(fileHandle, buf, sizeof(buf), 0);
+
+	if (res == -1)
+	{
+		throw(std::runtime_error("Error receiving data from socket"));
+	}
 
 	return std::string(buf);
 }
 
 int Socket::getPort()
 {
-	socklen_t addrLen = sizeof(fullAddr);
-	getsockname(fileHandle, getSockaddr(), &addrLen);
+	struct sockaddr_in sockaddr = address.getSockAddr();
 
-	return static_cast<int>(ntohs(fullAddr.sin_port));
-}
+	socklen_t addrLen = sizeof(sockaddr);
+	getsockname(fileHandle, reinterpret_cast<struct sockaddr*>(&sockaddr), &addrLen);
 
-sockaddr *Socket::getSockaddr()
-{
-	return reinterpret_cast<struct sockaddr *>(&fullAddr);
+	return static_cast<int>(ntohs(sockaddr.sin_port));
 }
