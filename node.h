@@ -27,7 +27,7 @@ private:
 
 public:
 
-	Node();
+	Node(Socket::Address &address);
 
 	int getFd();
 };

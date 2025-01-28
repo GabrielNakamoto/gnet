@@ -1,6 +1,7 @@
 #include "node.h"
 
-Node::Node()
+Node::Node(Address &address)
+	:	connection(address)
 {
 }
 
