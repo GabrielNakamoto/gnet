@@ -1,6 +1,7 @@
 #include <cstring>
 #include <arpa/inet.h>
 #include <string>
+#include <unistd.h>
 
 #include "socket.h"
 
@@ -30,6 +31,14 @@ Socket::Socket(const int fileHandle, struct sockaddr_in addr)
 {
 }
 
+Socket::~Socket()
+{
+	if (fileHandle != -1)
+	{
+		close(fileHandle);
+	}
+}
+
 void Socket::Bind()
 {
 	bind(fileHandle, getSockaddr(), sizeof(fullAddr));
@@ -57,18 +66,20 @@ std::unique_ptr<Socket> Socket::Accept()
 
 void Socket::Send(std::string &data, size_t bufferSize)
 {
+	// just get size of data?
 	char buf[bufferSize];
 	strcpy(buf, data.c_str());
 
 	send(fileHandle, buf, sizeof(buf), 0);
 }
 
-void Socket::Recv(std::string &data, size_t bufferSize)
+std::string Socket::Recv(size_t bufferSize)
 {
 	char buf[bufferSize];
-	strcpy(buf, data.c_str());
 
 	recv(fileHandle, buf, sizeof(buf), 0);
+
+	return std::string(buf);
 }
 
 int Socket::getPort()
