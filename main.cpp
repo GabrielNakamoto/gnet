@@ -7,6 +7,7 @@
 #include <netdb.h>
 #include <netinet/in.h>
 
+#include "socket.h"
 
 /*
  * 	Where do sockets come into play in a P2P network?
@@ -29,7 +30,11 @@
 
 void server2()
 {
-	Socket handlerSocket(0, 
+	Socket handlerSocket(0);
+
+	handlerSocket.Bind();
+
+	std::cout << "Connected to port " << handlerSocket.getPort() << std::endl;
 }
 
 void client(int port)
@@ -132,7 +137,7 @@ int main(int argc, char **argv)
 {
 	if (argc == 1)
 	{
-		server();
+		server2();
 	} else if (argc == 2)
 	{
 		client(strtol(argv[1], NULL, 10));

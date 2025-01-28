@@ -1,10 +1,12 @@
-#include "socket.h"
+#include <cstring>
+#include <arpa/inet.h>
+#include <string>
 
-#include <memory>
+#include "socket.h"
 
 // TODO: error handling
 
-Socket::Socket(int domain, int protocl, int port, int domain = AF_INET, int service = SOCK_STREAM, unsigned long addr = INADDR_ANY)
+Socket::Socket(int protocol, int port, int domain, int service, unsigned long addr)
 	:	domain(domain)
 	,	service(service)
 	,	protocol(protocol)
@@ -14,7 +16,11 @@ Socket::Socket(int domain, int protocl, int port, int domain = AF_INET, int serv
 	fullAddr.sin_family = domain;
 
 	// host to network byte order conversions
-	fullAddr.sin_port = htons(port);
+	if (port != -1)
+	{
+		fullAddr.sin_port = htons(port);
+	}
+
 	fullAddr.sin_addr.s_addr = htonl(addr);
 }
 
@@ -24,32 +30,32 @@ Socket::Socket(const int fileHandle, struct sockaddr_in addr)
 {
 }
 
-void Socket::bind()
+void Socket::Bind()
 {
-	bind(fileHandle, reinterpret_cast<struct sockaddr *>(&fullAddr), sizeof(fullAddr));
+	bind(fileHandle, getSockaddr(), sizeof(fullAddr));
 }
 
-void Socket::connect()
+void Socket::Connect()
 {
-	connect(fileHandle, reinterpret_cast<struct sockaddr *?>(&fullAddr), sizeof(fullAddr));
+	connect(fileHandle, getSockaddr(), sizeof(fullAddr));
 }
 
-void Socket::listen(int backlog)
+void Socket::Listen(int backlog)
 {
 	listen(fileHandle, backlog);
 }
 
-std::unique_ptr<Socket> Socket::accept()
+std::unique_ptr<Socket> Socket::Accept()
 {
 	struct sockaddr_storage connectionAddr;
 	socklen_t addrLen = sizeof(connectionAddr);
 
 	const int connectionFileHandle = accept(fileHandle, reinterpret_cast<struct sockaddr *>(&connectionAddr), &addrLen);
 
-	return std::make_unique(Socket(static_cast<sockaddr_in>(connectionAddr), connectionFileHandle);
+	return std::make_unique<Socket>(connectionFileHandle, *reinterpret_cast<sockaddr_in *>(&connectionAddr));
 }
 
-void Socket::send(const std::string &data, size_t bufferSize = 1024)
+void Socket::Send(std::string &data, size_t bufferSize)
 {
 	char buf[bufferSize];
 	strcpy(buf, data.c_str());
@@ -57,7 +63,7 @@ void Socket::send(const std::string &data, size_t bufferSize = 1024)
 	send(fileHandle, buf, sizeof(buf), 0);
 }
 
-void Socket::recv(const std::string &data, size_t bufferSize = 1024)
+void Socket::Recv(std::string &data, size_t bufferSize)
 {
 	char buf[bufferSize];
 	strcpy(buf, data.c_str());
@@ -65,7 +71,7 @@ void Socket::recv(const std::string &data, size_t bufferSize = 1024)
 	recv(fileHandle, buf, sizeof(buf), 0);
 }
 
-int Socket::getPort() const
+int Socket::getPort()
 {
 	socklen_t addrLen = sizeof(fullAddr);
 	getsockname(fileHandle, getSockaddr(), &addrLen);
@@ -73,7 +79,7 @@ int Socket::getPort() const
 	return static_cast<int>(ntohs(fullAddr.sin_port));
 }
 
-sockaddr *Socket::getSockaddr() const
+sockaddr *Socket::getSockaddr()
 {
 	return reinterpret_cast<struct sockaddr *>(&fullAddr);
 }
