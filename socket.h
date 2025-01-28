@@ -8,8 +8,6 @@
 #include <memory>
 
 
-// TODO: exceptions / error handling
-// make protocol and service templates?
 class Socket
 {
 public:
@@ -48,15 +46,18 @@ public:
 private:
 
 	Address address;
+
 	int fileHandle = -1;
 
 public:
 
-	// creates new socket and populates address
-	// domain??
+	// acquire socket resource
 	Socket(Address &address);
 	Socket(unsigned int ip, unsigned short port);
 	Socket(const int fileHandle, struct sockaddr_in address);
+
+	// release socket resource
+	~Socket();
 
 	Socket(Socket &&socket) = default;
 	Socket& operator=(Socket &&socket) = default;
@@ -64,8 +65,7 @@ public:
 	Socket(Socket &socket) = delete;
 	Socket& operator=(Socket &socket) = delete;
 
-	~Socket();
-
+	// sys call wrappers
 	void Bind();
 	void Connect();
 	void Listen(int backlog);
@@ -76,6 +76,7 @@ public:
 	void Send(std::string &data, size_t bufferSize = 1024);
 	std::string Recv(size_t bufferSize = 1024);
 
+	// returns current address port in host byte order
 	int getPort();
 };
 
