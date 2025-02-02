@@ -142,15 +142,16 @@ void socketHandler(int sfd)
 		std::lock_guard<std::mutex> lock(peer_mutex);
 
 		int peerLen = peers.size();
-		int nfds = std::min(peerLen, MAX_PEERS) + 1;
+		// int nfds = std::min(peerLen, MAX_PEERS) + 1;
+		int nfds = peerLen + 1;
 		// update poll array
-		for (int i = 0; i < nfds - 1; ++i)
+		for (int i = 0; i < peerLen; ++i)
 		{
-			if (pfds[i+1].fd == 0)
-			{
-				pfds[i+1].fd = peers[i].fd;
-				pfds[i+1].events = POLLIN | POLLOUT;
-			}
+			// update every peers poll struct every check
+			// TODO: 	make this efficient (store pfd index in peer object?)
+			// 			main thing to handle is disconnects
+			pfds[i+1].fd = peers[i].fd;
+			pfds[i+1].events = POLLIN | POLLOUT;
 		}
 
 		int ret = poll(pfds, nfds, timeout);
@@ -162,8 +163,12 @@ void socketHandler(int sfd)
 		}
 
 		// service sockets
-		for (int i = 0; i < nfds - 1; ++i)
+		for (int i = 0; i < peerLen; ++i)
 		{
+			// hack
+			if (i == peers.size())
+				break;
+
 			if (pfds[i+1].revents & POLLIN)
 			{
 				char buf[1024];
