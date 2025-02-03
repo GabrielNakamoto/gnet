@@ -34,9 +34,10 @@ public:
 
 	[[nodiscard]] std::unique_ptr<Socket> accept(sockaddr *addr, socklen_t *addrlen) const;
 
-private:
+//TODO: setup event / poll functionality
+// private:
 
-	unsigned int fd;
+unsigned int fd;
 };
 
 }
