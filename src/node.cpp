@@ -8,6 +8,8 @@
 namespace gnet
 {
 
+int sfd;
+
 Node::Node(unsigned short port)
 {
 	struct sockaddr_in serverAddr;
@@ -24,13 +26,15 @@ Node::Node(unsigned short port)
 		return;
 	}
 
-	if (bind(sfd, (struct sockaddr *)&serverAddr, sizeof(serverAddr)) == -1)
+	listenSock = std::make_unique<Socket>(sfd);
+
+	if (listenSock->bind((struct sockaddr*)&serverAddr, sizeof(serverAddr)) == -1)
 	{
 		perror("Failed to bind server socket");
 		return;
 	}
 
-	if (listen(sfd, 10) == -1)
+	if (listenSock->listen(10) == -1)
 	{
 		perror("Failed to listen for server connections");
 	}
@@ -72,16 +76,15 @@ void Node::peerConnectionHandlerThread()
 				return;
 			}
 
-			if (connect(fd, (struct sockaddr *)&sockaddr, sizeof(sockaddr)) == -1)
+			auto sock = std::make_shared<Socket>(fd);
+
+			if (sock->connect((struct sockaddr *)&sockaddr, sizeof(sockaddr)) == -1)
 			{
 				perror("Error connecting to peer");
 				return;
 			}
 
-			Peer np;
-
-			np.fd = fd;
-			np.addr = sockaddr;
+			Peer np(std::move(sock), sockaddr);
 
 			{
 				std::lock_guard<std::mutex> lock(peer_mutex);
@@ -136,7 +139,7 @@ void Node::socketHandlerThread()
 		{
 			if (pfds[i+1].fd == 0)
 			{
-				pfds[i+1].fd = peers[i].fd;
+				pfds[i+1].fd = peers[i].sock->fd;
 				pfds[i+1].events = POLLIN | POLLOUT;
 			}
 		}
@@ -155,7 +158,7 @@ void Node::socketHandlerThread()
 			if (pfds[i+1].revents & POLLIN)
 			{
 				char buf[1024];
-				int nBytes = recv(peers[i].fd, buf, sizeof(buf), 0);
+				int nBytes = peers[i].sock->recv(buf, sizeof(buf), 0);
 
 				if (nBytes == 0)
 				{
@@ -175,7 +178,7 @@ void Node::socketHandlerThread()
 
 			if (! peers[i].sendBuf.empty() && pfds[i+1].revents & POLLOUT)
 			{
-				int nBytes = send(peers[i].fd, &peers[i].sendBuf[0], sizeof(peers[i].sendBuf), 0);
+				int nBytes = peers[i].sock->send(&peers[i].sendBuf[0], sizeof(peers[i].sendBuf), 0);
 				if (nBytes == 0)
 				{
 					printf("Node %d disconnected\n", i);
@@ -199,19 +202,22 @@ void Node::socketHandlerThread()
 			// filled in with address of peer socket
 			struct sockaddr_in connectionAddr;
 			socklen_t len = sizeof(connectionAddr);
-			int cfd = accept(sfd, (struct sockaddr*)&connectionAddr, &len);
 
+			auto sock = listenSock->accept((struct sockaddr*)&connectionAddr, &len);
+
+			/* TODO:
 			if (cfd == -1)
 			{
 				perror("Error accepting incoming connection");
 				// ?
 				return;
 			}
+			*/
 
 			std::cout << "Accepted connection to peer socket\n";
-			Peer np;
-			np.fd = cfd;
-			np.addr  = connectionAddr;
+
+			// auto sock = std::make_shared<Socket>(cfd);
+			Peer np(std::move(sock), connectionAddr);
 
 			peers.push_back(np);
 		}
