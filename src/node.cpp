@@ -117,6 +117,15 @@ void Node::peerConnectionHandlerThread()
 	}
 }
 
+void Node::socketDisconnectPeers()
+{
+	peers.erase(
+			std::remove_if(peers.begin(), peers.end(),
+				[](const auto& peer) { return !peer.connected; }),
+			peers.end()
+	);
+}
+
 Socket::EventsPerSock Node::socketPollEvents(int timeout)
 {
 	size_t nfds = peers.size() + 1;
@@ -199,25 +208,14 @@ void Node::socketServicePeers(const Socket::EventsPerSock &eventsPerSock)
 			if (nBytes == 0)
 			{
 				std::cout << "Node disconnected\n";
-			} else 
+				peer.connected = false;
+			} else if (nBytes == -1)
+			{
+				perror("Error sending message to peer");
+			}  else
 			{
 				std::cout << "Received msg " << std::string(buf) << " from peer\n";
 			}
-			/*
-			if (nBytes == 0)
-			{
-				printf("Node disconnected\n");
-				peers.erase(peers.begin() + i);
-				i--;
-			} else if (nBytes == -1)
-			{
-				perror("Error receiving message from peer");
-				return;
-			} else 
-			{
-				printf("Received msg: %s from peer", buf);
-			}
-			*/
 		}
 
 		if (canSend)
@@ -225,16 +223,12 @@ void Node::socketServicePeers(const Socket::EventsPerSock &eventsPerSock)
 			int nBytes = peer.sock->send(&peer.sendBuf[0], sizeof(peer.sendBuf), 0);
 			if (nBytes == 0)
 			{
-				/*
-				printf("Node %d disconnected\n", i);
-				peers.erase(peers.begin() + i);
-				i--;
-				*/
-				continue;
+				std::cout << "Node disconnected\n";
+				peer.connected = false;
+				peer.sendBuf.clear();
 			} else if (nBytes == -1)
 			{
 				perror("Error sending message to peer");
-				return;
 			} else 
 			{
 				peer.sendBuf.clear();
@@ -287,6 +281,8 @@ void Node::socketHandlerThread()
 	{
 		std::this_thread::sleep_for(std::chrono::milliseconds(500));
 		std::lock_guard<std::mutex> lock(peer_mutex);
+
+		socketDisconnectPeers();
 
 		int timeout = 500;
 		Socket::EventsPerSock eventsPerSock = socketPollEvents(timeout);
