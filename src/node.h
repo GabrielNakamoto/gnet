@@ -34,7 +34,7 @@ class Node
 {
 private:
 
-	std::unique_ptr<Socket> listenSock;
+	std::shared_ptr<Socket> listenSock;
 	std::vector<Peer> peers;
 
 	mutable std::mutex peer_mutex;
@@ -50,6 +50,10 @@ private:
 
 	void peerConnectionHandlerThread();
 	void socketHandlerThread();
+
+	Socket::EventsPerSock socketPollEvents(int timeout);
+	void socketServicePeers(const Socket::EventsPerSock &eventsPerSock);
+	void socketAcceptConnections(const Socket::EventsPerSock &eventsPerSock);
 };
 
 } // namespace

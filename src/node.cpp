@@ -2,6 +2,7 @@
 #include <thread>
 #include <arpa/inet.h>
 #include <chrono>
+#include <unordered_map>
 
 #include "node.h"
 
@@ -116,111 +117,182 @@ void Node::peerConnectionHandlerThread()
 	}
 }
 
-void Node::socketHandlerThread()
+Socket::EventsPerSock Node::socketPollEvents(int timeout)
 {
-	const int MAX_PEERS = 20;
-	struct pollfd pfds[MAX_PEERS + 1];
+	size_t nfds = peers.size() + 1;
+	struct pollfd pfds[nfds];
 
 	pfds[0].fd = sfd;
 	pfds[0].events = POLLIN;
 
-	// milliseconds to wait for event
-	int timeout = 500;
+	int i = 1;
+	for (const auto &peer : peers)
+	{
+		pfds[i].fd = peer.sock->fd;	
+		pfds[i].events = POLLIN;
 
+		if (! peer.sendBuf.empty())
+			pfds[i].events |= POLLOUT;
+
+		i++;
+	}
+
+	int ret = poll(pfds, nfds, timeout);
+
+	if (ret == -1)
+	{
+		perror("Error while polling sockets");
+	}
+
+	Socket::EventsPerSock eventsPerSock;
+
+	Socket::Event listenEvents;
+	if (pfds[0].revents & POLLIN)
+	{
+		listenEvents |= Socket::RECV;
+	}
+
+	eventsPerSock.emplace(listenSock, listenEvents);
+
+	i = 1;
+	for (const auto &peer : peers)
+	{
+		Socket::Event events;
+
+		if (pfds[i].revents & POLLIN)
+			events |= Socket::RECV;
+
+		if (pfds[i].revents & POLLOUT)
+			events |= Socket::SEND;
+
+		eventsPerSock.emplace(peer.sock, events);
+
+		i++;
+	}
+
+	return eventsPerSock;
+}
+
+void Node::socketServicePeers(const Socket::EventsPerSock &eventsPerSock)
+{
+	for (auto& peer : peers)
+	{
+
+		bool canRecv = false;
+		bool canSend = false;
+
+		{
+			auto it = eventsPerSock.find(peer.sock);
+
+			if (it != eventsPerSock.end())
+			{
+				canRecv = it->second & Socket::RECV;
+				canSend = it->second & Socket::SEND;
+			}
+		}
+
+		if (canRecv)
+		{
+			char buf[1024];
+			int nBytes = peer.sock->recv(buf, sizeof(buf), 0);
+
+			if (nBytes == 0)
+			{
+				std::cout << "Node disconnected\n";
+			} else 
+			{
+				std::cout << "Received msg " << std::string(buf) << " from peer\n";
+			}
+			/*
+			if (nBytes == 0)
+			{
+				printf("Node disconnected\n");
+				peers.erase(peers.begin() + i);
+				i--;
+			} else if (nBytes == -1)
+			{
+				perror("Error receiving message from peer");
+				return;
+			} else 
+			{
+				printf("Received msg: %s from peer", buf);
+			}
+			*/
+		}
+
+		if (canSend)
+		{
+			int nBytes = peer.sock->send(&peer.sendBuf[0], sizeof(peer.sendBuf), 0);
+			if (nBytes == 0)
+			{
+				/*
+				printf("Node %d disconnected\n", i);
+				peers.erase(peers.begin() + i);
+				i--;
+				*/
+				continue;
+			} else if (nBytes == -1)
+			{
+				perror("Error sending message to peer");
+				return;
+			} else 
+			{
+				peer.sendBuf.clear();
+			}
+		}
+
+	}
+}
+
+void Node::socketAcceptConnections(const Socket::EventsPerSock &eventsPerSock)
+{
+	bool connectionRequest = false;
+
+	{
+		auto it = eventsPerSock.find(listenSock);
+
+		if (it != eventsPerSock.end() && it->second & Socket::RECV)
+			connectionRequest = true;
+	}
+
+	if (connectionRequest)
+	{
+		// filled in with address of peer socket
+		struct sockaddr_in connectionAddr;
+		socklen_t len = sizeof(connectionAddr);
+
+		auto sock = listenSock->accept((struct sockaddr*)&connectionAddr, &len);
+
+		/* TODO:
+		if (cfd == -1)
+		{
+			perror("Error accepting incoming connection");
+			// ?
+			return;
+		}
+		*/
+
+		std::cout << "Accepted connection to peer socket\n";
+
+		// auto sock = std::make_shared<Socket>(cfd);
+		Peer np(std::move(sock), connectionAddr);
+
+		peers.push_back(np);
+	}
+}
+
+void Node::socketHandlerThread()
+{
 	while (true)
 	{
 		std::this_thread::sleep_for(std::chrono::milliseconds(500));
 		std::lock_guard<std::mutex> lock(peer_mutex);
 
-		int peerLen = peers.size();
-		int nfds = std::min(peerLen, MAX_PEERS) + 1;
-		// update poll array
-		for (int i = 0; i < nfds - 1; ++i)
-		{
-			if (pfds[i+1].fd == 0)
-			{
-				pfds[i+1].fd = peers[i].sock->fd;
-				pfds[i+1].events = POLLIN | POLLOUT;
-			}
-		}
+		int timeout = 500;
+		Socket::EventsPerSock eventsPerSock = socketPollEvents(timeout);
 
-		int ret = poll(pfds, nfds, timeout);
-
-		if (ret == -1)
-		{
-			perror("Error while polling sockets");
-			continue;
-		}
-
-		// service sockets
-		for (int i = 0; i < nfds - 1; ++i)
-		{
-			if (pfds[i+1].revents & POLLIN)
-			{
-				char buf[1024];
-				int nBytes = peers[i].sock->recv(buf, sizeof(buf), 0);
-
-				if (nBytes == 0)
-				{
-					printf("Node %d disconnected\n", i);
-					peers.erase(peers.begin() + i);
-					i--;
-					continue;
-				} else if (nBytes == -1)
-				{
-					perror("Error receiving message from peer");
-					return;
-				} else 
-				{
-					printf("Received msg: %s from peer %d\n", buf, i);
-				}
-			}
-
-			if (! peers[i].sendBuf.empty() && pfds[i+1].revents & POLLOUT)
-			{
-				int nBytes = peers[i].sock->send(&peers[i].sendBuf[0], sizeof(peers[i].sendBuf), 0);
-				if (nBytes == 0)
-				{
-					printf("Node %d disconnected\n", i);
-					peers.erase(peers.begin() + i);
-					i--;
-					continue;
-				} else if (nBytes == -1)
-				{
-					perror("Error sending message to peer");
-					return;
-				} else 
-				{
-					peers[i].sendBuf.clear();
-				}
-			}
-		}
-		
-		// accept incoming connections
-		if (pfds[0].revents & POLLIN)
-		{
-			// filled in with address of peer socket
-			struct sockaddr_in connectionAddr;
-			socklen_t len = sizeof(connectionAddr);
-
-			auto sock = listenSock->accept((struct sockaddr*)&connectionAddr, &len);
-
-			/* TODO:
-			if (cfd == -1)
-			{
-				perror("Error accepting incoming connection");
-				// ?
-				return;
-			}
-			*/
-
-			std::cout << "Accepted connection to peer socket\n";
-
-			// auto sock = std::make_shared<Socket>(cfd);
-			Peer np(std::move(sock), connectionAddr);
-
-			peers.push_back(np);
-		}
+		socketServicePeers(eventsPerSock);
+		socketAcceptConnections(eventsPerSock);
 	}
 }
 

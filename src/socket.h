@@ -3,6 +3,7 @@
 
 #include <sys/socket.h>
 #include <memory>
+#include <unordered_map>
 
 namespace gnet
 {
@@ -33,6 +34,13 @@ public:
 
 
 	[[nodiscard]] std::unique_ptr<Socket> accept(sockaddr *addr, socklen_t *addrlen) const;
+
+	using Event = uint16_t;
+
+	static constexpr Event RECV = 0x0001;
+	static constexpr Event SEND = 0x0010;
+
+	using EventsPerSock = std::unordered_map<std::shared_ptr<const Socket>, Event>;
 
 //TODO: setup event / poll functionality
 // private:
